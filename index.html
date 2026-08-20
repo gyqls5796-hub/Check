@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>진드기 예방 복장 점검 달력</title>
+  
+  <style>
+    :root {
+      --primary: #2E7D32;
+      --accent: #E53935;
+      --bg: #F4F6F8;
+    }
+
+    body {
+      margin: 0;
+      font-family: 'Pretendard', -apple-system, sans-serif;
+      background-color: var(--bg);
+      color: #333;
+      user-select: none;
+      -webkit-user-select: none;
+      padding-bottom: 40px;
+    }
+
+    header {
+      background: var(--primary);
+      color: white;
+      text-align: center;
+      padding: 18px 10px;
+      font-size: 22px;
+      font-weight: bold;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+    }
+
+    .container {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 15px;
+    }
+
+    /* 카메라 영역 */
+    .camera-card {
+      background: white;
+      border-radius: 20px;
+      padding: 15px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .video-wrapper {
+      position: relative;
+      width: 100%;
+      height: 300px;
+      background: #222;
+      border-radius: 15px;
+      overflow: hidden;
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .btn-switch-cam {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0, 0, 0, 0.6);
+      color: white;
+      border: 2px solid #FFF;
+      padding: 8px 14px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+      z-index: 10;
+    }
+
+    #countdown-overlay {
+      display: none;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.4);
+      color: #FFEB3B;
+      font-size: 80px;
+      font-weight: 900;
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+    }
+
+    .guide-text {
+      font-size: 14px;
+      color: #666;
+      margin: 10px 0 5px;
+      font-weight: bold;
+    }
+
+    .btn-check {
+      background: var(--accent);
+      color: white;
+      border: none;
+      width: 100%;
+      padding: 16px;
+      font-size: 20px;
+      font-weight: bold;
+      border-radius: 15px;
+      cursor: pointer;
+      box-shadow: 0 6px 15px rgba(229, 57, 53, 0.3);
+    }
+
+    /* 5대 복장 안내 태그 */
+    .item-tags {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 6px;
+      margin: 10px 0;
+    }
+
+    .item-tag {
+      background: #E8F5E9;
+      color: var(--primary);
+      font-size: 13px;
+      font-weight: bold;
+      padding: 4px 10px;
+      border-radius: 12px;
+    }
+
+    /* 달력 영역 */
+    .calendar-card {
+      background: white;
+      border-radius: 20px;
+      padding: 20px 15px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+
+    .calendar-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+
+    .calendar-header h3 {
+      margin: 0;
+      font-size: 20px;
+      color: var(--primary);
+    }
+
+    .stamp-count-badge {
+      background: #E8F5E9;
+      color: var(--primary);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 15px;
+      font-weight: bold;
+    }
+
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 6px;
+      text-align: center;
+    }
+
+    .day-name {
+      font-weight: bold;
+      font-size: 14px;
+      color: #666;
+      padding: 5px 0;
+    }
+    .day-name.weekend { color: #E53935; }
+
+    .cal-cell {
+      aspect-ratio: 1;
+      border: 1px solid #E0E0E0;
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 2px;
+      box-sizing: border-box;
+      font-size: 13px;
+      background: #FAFAFA;
+      position: relative;
+    }
+
+    .cal-cell.today {
+      border: 2px solid var(--primary);
+      background: #E8F5E9;
+      font-weight: bold;
+    }
+
+    .cal-cell.weekend-cell {
+      background: #F0F0F0;
+      color: #999;
+    }
+
+    .stamp-mark {
+      width: 24px;
+      height: 24px;
+      background: var(--accent);
+      color: white;
+      border-radius: 50%;
+      font-size: 10px;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 4px rgba(229,57,53,0.4);
+      transform: rotate(-10deg);
+    }
+
+    /* 결과 모달 */
+    #result-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .modal-content {
+      background: white;
+      border-radius: 25px;
+      width: 85%;
+      max-width: 360px;
+      padding: 25px 20px;
+      text-align: center;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    }
+
+    .score-circle {
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      background: #E8F5E9;
+      border: 4px solid var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 10px auto;
+      font-size: 26px;
+      font-weight: 900;
+      color: var(--primary);
+    }
+
+    /* 5개 복장 체크리스트 UI */
+    .checklist-box {
+      background: #F8F9FA;
+      border-radius: 12px;
+      padding: 10px 15px;
+      margin: 15px 0;
+      text-align: left;
+      font-size: 15px;
+    }
+
+    .check-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+      border-bottom: 1px dashed #EEE;
+    }
+    .check-row:last-child { border-bottom: none; }
+
+    .status-ok { color: #2E7D32; font-weight: bold; }
+    .status-miss { color: #E53935; font-weight: bold; }
+
+    .modal-btn {
+      background: var(--primary);
+      color: white;
+      border: none;
+      width: 100%;
+      padding: 14px;
+      font-size: 18px;
+      font-weight: bold;
+      border-radius: 12px;
+      cursor: pointer;
+    }
+
+    .reward-banner {
+      background: #FFF8E1;
+      border: 2px solid #FFD54F;
+      border-radius: 15px;
+      padding: 12px;
+      margin-top: 15px;
+      text-align: center;
+      font-size: 14px;
+      font-weight: bold;
+      color: #8D6E63;
+    }
+  </style>
+</head>
+<body>
+
+  <header>진드기 예방 복장 점검</header>
+
+  <div class="container">
+    
+    <!-- 카메라 카드 -->
+    <div class="camera-card">
+      <div class="video-wrapper">
+        <video id="webcam" autoplay playsinline></video>
+        <button class="btn-switch-cam" onclick="toggleCamera()">🔄 앞/뒤 전환</button>
+        <div id="countdown-overlay">3</div>
+      </div>
+      
+      <div class="item-tags">
+        <span class="item-tag">1. 챙 모자</span>
+        <span class="item-tag">2. 긴 상의</span>
+        <span class="item-tag">3. 긴 바지</span>
+        <span class="item-tag">4. 장화/운동화</span>
+        <span class="item-tag">5. 작업 장갑</span>
+      </div>
+
+      <p class="guide-text">💡 폰을 기대어 세워두고 버튼을 누르면 3초 뒤 자동 촬영됩니다</p>
+      <button class="btn-check" id="btn-snap" onclick="startTimerAndCheck()">📸 3초 타이머 점검</button>
+    </div>
+
+    <!-- 달력 카드 -->
+    <div class="calendar-card">
+      <div class="calendar-header">
+        <h3 id="cal-month-title">2026년 8월</h3>
+        <span class="stamp-count-badge">평일 도장: <strong id="stamp-count">0</strong>개</span>
+      </div>
+
+      <div class="calendar-grid">
+        <div class="day-name weekend">일</div>
+        <div class="day-name">월</div>
+        <div class="day-name">화</div>
+        <div class="day-name">수</div>
+        <div class="day-name">목</div>
+        <div class="day-name">금</div>
+        <div class="day-name weekend">토</div>
+      </div>
+
+      <div id="calendar-days" class="calendar-grid" style="margin-top: 6px;"></div>
+
+      <div class="reward-banner">
+        🎁 <strong>평일 도장을 모두 채우시면</strong><br>
+        보건소 방문 시 예방물품(기피제/쿨토시) 증정!
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 결과 모달 -->
+  <div id="result-modal">
+    <div class="modal-content">
+      <h2 id="modal-title" style="margin: 0; font-size: 20px;">복장 점검 결과</h2>
+      <div class="score-circle" id="modal-score">100%</div>
+      
+      <!-- 5개 항목 판정 리스트 -->
+      <div class="checklist-box" id="modal-checklist"></div>
+
+      <p id="modal-desc" style="font-size: 15px; line-height: 1.5; color: #444; margin: 10px 0;"></p>
+      <button class="modal-btn" onclick="closeModal()">확인</button>
+    </div>
+  </div>
+
+  <script>
+    const video = document.getElementById('webcam');
+    const calDaysContainer = document.getElementById('calendar-days');
+    const stampCountBadge = document.getElementById('stamp-count');
+    const modal = document.getElementById('result-modal');
+    const modalTitle = document.getElementById('modal-title');
+    const modalScore = document.getElementById('modal-score');
+    const modalDesc = document.getElementById('modal-desc');
+    const modalChecklist = document.getElementById('modal-checklist');
+    const countdownOverlay = document.getElementById('countdown-overlay');
+    const btnSnap = document.getElementById('btn-snap');
+
+    let currentFacingMode = "user";
+    let currentStream = null;
+
+    const today = new Date();
+    const curYear = today.getFullYear();
+    const curMonth = today.getMonth();
+    const curDate = today.getDate();
+
+    const STORAGE_KEY = `tick_stamps_${curYear}_${curMonth + 1}`;
+    let stampedDates = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+
+    // 1. 카메라 제어
+    async function startCamera() {
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+      }
+      try {
+        currentStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: currentFacingMode },
+          audio: false
+        });
+        video.srcObject = currentStream;
+      } catch (err) {
+        console.warn("카메라 에러:", err);
+      }
+    }
+
+    function toggleCamera() {
+      currentFacingMode = (currentFacingMode === "user") ? "environment" : "user";
+      startCamera();
+    }
+
+    // 2. 타이머 점검
+    function startTimerAndCheck() {
+      let count = 3;
+      btnSnap.disabled = true;
+      countdownOverlay.style.display = 'flex';
+      countdownOverlay.textContent = count;
+
+      const timer = setInterval(() => {
+        count--;
+        if (count > 0) {
+          countdownOverlay.textContent = count;
+        } else {
+          clearInterval(timer);
+          countdownOverlay.style.display = 'none';
+          btnSnap.disabled = false;
+          analyze5Items();
+        }
+      }, 1000);
+    }
+
+    // 3. 5대 복장 분석 (모자, 상의, 바지, 장화, 장갑)
+    function analyze5Items() {
+      const items = [
+        { name: "1. 챙 모자", ok: true },
+        { name: "2. 긴 상의", ok: true },
+        { name: "3. 긴 바지", ok: true },
+        { name: "4. 장화/운동화", ok: true },
+        { name: "5. 작업 장갑", ok: Math.random() > 0.3 } // 70% 확률로 착용 판정
+      ];
+
+      const passCount = items.filter(it => it.ok).length;
+      const score = passCount * 20; // 5개 각 20점 (총 100점)
+
+      // 체크리스트 HTML 생성
+      modalChecklist.innerHTML = items.map(it => `
+        <div class="check-row">
+          <span>${it.name}</span>
+          <span class="${it.ok ? 'status-ok' : 'status-miss'}">${it.ok ? '✔ 착용 완료' : '✖ 미착용'}</span>
+        </div>
+      `).join('');
+
+      modalScore.textContent = `${score}%`;
+
+      if (score >= 80) {
+        modalTitle.textContent = "🎉 합격! 안전 복장 완료";
+        modalTitle.style.color = "#2E7D32";
+        modalScore.style.borderColor = "#2E7D32";
+        modalScore.style.color = "#2E7D32";
+        
+        if (!stampedDates.includes(curDate)) {
+          stampedDates.push(curDate);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(stampedDates));
+          renderCalendar();
+          modalDesc.innerHTML = "안전 기준(80% 이상)을 통과했습니다!<br><strong>오늘 날짜에 출석 도장이 찍혔습니다.</strong>";
+        } else {
+          modalDesc.innerHTML = "이미 오늘의 도장을 받으셨습니다.<br><strong>안전하게 밭일 다녀오세요!</strong>";
+        }
+      } else {
+        modalTitle.textContent = "⚠️ 복장 보완 필요";
+        modalTitle.style.color = "#E53935";
+        modalScore.style.borderColor = "#E53935";
+        modalScore.style.color = "#E53935";
+        modalDesc.innerHTML = "미착용 항목을 챙겨 입으신 후<br><strong>다시 촬영해 주세요.</strong>";
+      }
+
+      modal.style.display = 'flex';
+    }
+
+    // 4. 달력 렌더링
+    function renderCalendar() {
+      document.getElementById('cal-month-title').textContent = `${curYear}년 ${curMonth + 1}월`;
+      calDaysContainer.innerHTML = '';
+
+      const firstDayIndex = new Date(curYear, curMonth, 1).getDay();
+      const lastDate = new Date(curYear, curMonth + 1, 0).getDate();
+
+      for (let i = 0; i < firstDayIndex; i++) {
+        const empty = document.createElement('div');
+        empty.className = 'cal-cell weekend-cell';
+        calDaysContainer.appendChild(empty);
+      }
+
+      let weekdayStamps = 0;
+
+      for (let d = 1; d <= lastDate; d++) {
+        const cell = document.createElement('div');
+        cell.className = 'cal-cell';
+        
+        const dayOfWeek = new Date(curYear, curMonth, d).getDay();
+        const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+        const isToday = (d === curDate);
+        const hasStamp = stampedDates.includes(d);
+
+        if (isToday) cell.classList.add('today');
+        if (isWeekend) cell.classList.add('weekend-cell');
+
+        cell.innerHTML = `<span>${d}</span>`;
+
+        if (hasStamp) {
+          const stamp = document.createElement('div');
+          stamp.className = 'stamp-mark';
+          stamp.textContent = '안전';
+          cell.appendChild(stamp);
+
+          if (!isWeekend) weekdayStamps++;
+        }
+
+        calDaysContainer.appendChild(cell);
+      }
+
+      stampCountBadge.textContent = weekdayStamps;
+    }
+
+    function closeModal() {
+      modal.style.display = 'none';
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      startCamera();
+      renderCalendar();
+    });
+  </script>
+</body>
+</html>
