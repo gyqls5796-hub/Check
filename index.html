@@ -42,7 +42,6 @@
       padding: 15px;
     }
 
-    /* 카메라 영역 */
     .camera-card {
       background: white;
       border-radius: 20px;
@@ -67,7 +66,6 @@
       object-fit: cover;
     }
 
-    /* 실시간 AI 감지 상태 표시 띠 */
     #ai-status-badge {
       position: absolute;
       top: 10px;
@@ -149,7 +147,6 @@
       box-shadow: 0 6px 15px rgba(229, 57, 53, 0.3);
     }
 
-    /* 달력 영역 */
     .calendar-card {
       background: white;
       border-radius: 20px;
@@ -317,6 +314,11 @@
       font-weight: bold;
       color: #8D6E63;
     }
+
+    /* 분석용 숨김 캔버스 */
+    #hidden-canvas {
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -324,8 +326,6 @@
   <header>진드기 예방 복장 점검</header>
 
   <div class="container">
-    
-    <!-- 카메라 카드 -->
     <div class="camera-card">
       <div class="video-wrapper">
         <video id="webcam" playsinline muted></video>
@@ -346,7 +346,6 @@
       <button class="btn-check" id="btn-snap" onclick="startTimerAndCheck()">📸 3초 타이머 점검</button>
     </div>
 
-    <!-- 달력 카드 -->
     <div class="calendar-card">
       <div class="calendar-header">
         <h3 id="cal-month-title">2026년 8월</h3>
@@ -370,7 +369,6 @@
         보건소 방문 시 예방물품(기피제/쿨토시) 증정!
       </div>
     </div>
-
   </div>
 
   <!-- 결과 모달 -->
@@ -378,13 +376,13 @@
     <div class="modal-content">
       <h2 id="modal-title" style="margin: 0; font-size: 20px;">복장 점검 결과</h2>
       <div class="score-circle" id="modal-score">0%</div>
-      
       <div class="checklist-box" id="modal-checklist"></div>
-
       <p id="modal-desc" style="font-size: 15px; line-height: 1.5; color: #444; margin: 10px 0;"></p>
       <button class="modal-btn" onclick="closeModal()">확인</button>
     </div>
   </div>
+
+  <canvas id="hidden-canvas"></canvas>
 
   <script>
     const video = document.getElementById('webcam');
@@ -398,6 +396,8 @@
     const countdownOverlay = document.getElementById('countdown-overlay');
     const btnSnap = document.getElementById('btn-snap');
     const aiStatusBadge = document.getElementById('ai-status-badge');
+    const hiddenCanvas = document.getElementById('hidden-canvas');
+    const hCtx = hiddenCanvas.getContext('2d', { willReadFrequently: true });
 
     let currentFacingMode = "user";
     let latestPoseLandmarks = null;
@@ -411,7 +411,6 @@
     const STORAGE_KEY = `tick_stamps_${curYear}_${curMonth + 1}`;
     let stampedDates = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
 
-    // 1. MediaPipe Pose AI 설정
     const pose = new Pose({
       locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
     });
@@ -426,10 +425,8 @@
     pose.onResults((results) => {
       if (results.poseLandmarks) {
         latestPoseLandmarks = results.poseLandmarks;
-        
-        // 머리(코=0)와 발목(27, 28) 가시성 검사
         const hasHead = latestPoseLandmarks[0].visibility > 0.5;
-        const hasAnkles = (latestPoseLandmarks[27].visibility > 0.5 || latestPoseLandmarks[28].visibility > 0.5);
+        const hasAnkles = (latestPoseLandmarks[27].visibility > 0.4 || latestPoseLandmarks[28].visibility > 0.4);
 
         if (hasHead && hasAnkles) {
           aiStatusBadge.textContent = "🟢 전신 감지 완료 (촬영 가능)";
@@ -448,11 +445,8 @@
       }
     });
 
-    // 2. 카메라 제어
     function initCamera() {
-      if (cameraInstance) {
-        cameraInstance.stop();
-      }
+      if (cameraInstance) cameraInstance.stop();
 
       cameraInstance = new Camera(video, {
         onFrame: async () => {
@@ -470,7 +464,6 @@
       initCamera();
     }
 
-    // 3. 3초 타이머
     function startTimerAndCheck() {
       let count = 3;
       btnSnap.disabled = true;
@@ -485,33 +478,92 @@
           clearInterval(timer);
           countdownOverlay.style.display = 'none';
           btnSnap.disabled = false;
-          processRealPoseCheck();
+          processSkinAndPoseCheck();
         }
       }, 1000);
     }
 
-    // 4. 실제 전신 관절 데이터 기반 복장/신체 부위 판정
-    function processRealPoseCheck() {
+    // 피부톤 검출 함수 (RGB 기반 YCbCr 피부색 영역 판별)
+    function isSkinPixel(r, g, b) {
+      return (r > 95 && g > 40 && b > 20 &&
+              (Math.max(r, g, b) - Math.min(r, g, b) > 15) &&
+              Math.abs(r - g) > 15 && r > g && r > b);
+    }
+
+    // 특정 부위 주변의 피부색 노출 비율 샘플링
+    function getSkinRatio(xRatio, yRatio, radiusRatio) {
+      const w = hiddenCanvas.width;
+      const h = hiddenCanvas.height;
+      const cx = Math.floor(xRatio * w);
+      const cy = Math.floor(yRatio * h);
+      const r = Math.floor(radiusRatio * w);
+
+      if (cx < 0 || cy < 0 || cx >= w || cy >= h || r <= 0) return 0;
+
+      const startX = Math.max(0, cx - r);
+      const startY = Math.max(0, cy - r);
+      const boxW = Math.min(w - startX, r * 2);
+      const boxH = Math.min(h - startY, r * 2);
+
+      const imgData = hCtx.getImageData(startX, startY, boxW, boxH);
+      const data = imgData.data;
+      let skinCount = 0;
+      let total = 0;
+
+      for (let i = 0; i < data.length; i += 16) { // 4픽셀 단위 샘플링
+        const red = data[i];
+        const green = data[i+1];
+        const blue = data[i+2];
+        if (isSkinPixel(red, green, blue)) skinCount++;
+        total++;
+      }
+      return total > 0 ? (skinCount / total) : 0;
+    }
+
+    // 실제 복장 착용 및 피부 가림 판정
+    function processSkinAndPoseCheck() {
       if (!latestPoseLandmarks) {
         alert("카메라에 사람이 잡히지 않았습니다.\n카메라 앞에 서서 다시 촬영해 주세요!");
         return;
       }
 
+      hiddenCanvas.width = video.videoWidth || 480;
+      hiddenCanvas.height = video.videoHeight || 640;
+      hCtx.drawImage(video, 0, 0, hiddenCanvas.width, hiddenCanvas.height);
+
       const lm = latestPoseLandmarks;
-      
-      // 관절별 가시성(인식률) 체크
-      const hasHead = lm[0].visibility > 0.5;                          // 머리
-      const hasShoulders = (lm[11].visibility > 0.5 && lm[12].visibility > 0.5); // 어깨/상체
-      const hasWrists = (lm[15].visibility > 0.4 || lm[16].visibility > 0.4);   // 손목/장갑
-      const hasKnees = (lm[25].visibility > 0.5 && lm[26].visibility > 0.5);     // 무릎/바지
-      const hasFeet = (lm[27].visibility > 0.4 || lm[28].visibility > 0.4);      // 발목/신발
+
+      const hasHead = lm[0].visibility > 0.5;
+      const hasShoulders = (lm[11].visibility > 0.5 && lm[12].visibility > 0.5);
+      const hasWrists = (lm[15].visibility > 0.4 || lm[16].visibility > 0.4);
+      const hasKnees = (lm[25].visibility > 0.5 && lm[26].visibility > 0.5);
+      const hasFeet = (lm[27].visibility > 0.4 || lm[28].visibility > 0.4);
+
+      // 1. 모자 판정: 이마/머리 위 영역에서 피부색이나 머리카락 대비 모자 덮임 여부
+      const headSkin = getSkinRatio(lm[0].x, Math.max(0, lm[0].y - 0.08), 0.07);
+      const hasHat = hasHead && (headSkin < 0.22); // 이마 상단 피부 노출이 적어야 모자 착용으로 인정
+
+      // 2. 긴 상의 판정: 어깨와 팔꿈치 사이 팔 부위의 맨살 노출 검사
+      const armSkin = (getSkinRatio(lm[13].x, lm[13].y, 0.05) + getSkinRatio(lm[14].x, lm[14].y, 0.05)) / 2;
+      const hasLongSleeve = hasShoulders && (armSkin < 0.28); // 반팔일 경우 팔꿈치 주변 피부톤 증가
+
+      // 3. 긴 바지 판정: 무릎 주변 맨살 노출 검사
+      const legSkin = (getSkinRatio(lm[25].x, lm[25].y, 0.06) + getSkinRatio(lm[26].x, lm[26].y, 0.06)) / 2;
+      const hasLongPants = hasKnees && (legSkin < 0.25); // 반바지일 경우 무릎 주변 피부톤 증가
+
+      // 4. 신발/장화 판정: 발목 관절이 가시권에 있고 바닥에 닿아있는지
+      const hasShoes = hasFeet;
+
+      // 5. 작업 장갑 판정: 손목/손등 부위 맨살 노출 검사
+      const handSkin = (getSkinRatio(lm[15].x, lm[15].y, 0.05) + getSkinRatio(lm[16].x, lm[16].y, 0.05)) / 2;
+      const hasGloves = hasWrists && (handSkin < 0.20); // 맨손일 경우 손목 피부톤 증가
 
       const items = [
-        { name: "1. 챙 모자", ok: hasHead },
-        { name: "2. 긴 상의", ok: hasShoulders },
-        { name: "3. 긴 바지", ok: hasKnees },
-        { name: "4. 장화/운동화", ok: hasFeet },
-        { name: "5. 작업 장갑", ok: hasWrists }
+        { name: "1. 챙 모자", ok: hasHat },
+        { name: "2. 긴 상의", ok: hasLongSleeve },
+        { name: "3. 긴 바지", ok: hasLongPants },
+        { name: "4. 장화/운동화", ok: hasShoes },
+        { name: "5. 작업 장갑", ok: hasGloves }
       ];
 
       const passCount = items.filter(it => it.ok).length;
@@ -520,7 +572,7 @@
       modalChecklist.innerHTML = items.map(it => `
         <div class="check-row">
           <span>${it.name}</span>
-          <span class="${it.ok ? 'status-ok' : 'status-miss'}">${it.ok ? '✔ 확인 완료' : '✖ 미감지(잘림)'}</span>
+          <span class="${it.ok ? 'status-ok' : 'status-miss'}">${it.ok ? '✔ 착용 확인' : '✖ 미착용/맨살'}</span>
         </div>
       `).join('');
 
@@ -536,27 +588,21 @@
           stampedDates.push(curDate);
           localStorage.setItem(STORAGE_KEY, JSON.stringify(stampedDates));
           renderCalendar();
-          modalDesc.innerHTML = "전신 안전 복장(80% 이상)이 확인되었습니다!<br><strong>오늘 날짜에 출석 도장이 찍혔습니다.</strong>";
+          modalDesc.innerHTML = "안전 기준(80% 이상)을 통과했습니다!<br><strong>오늘 날짜에 출석 도장이 찍혔습니다.</strong>";
         } else {
           modalDesc.innerHTML = "이미 오늘의 도장을 받으셨습니다.<br><strong>안전하게 밭일 다녀오세요!</strong>";
         }
       } else {
-        modalTitle.textContent = "⚠️ 복장 보완 / 전신 미확인";
+        modalTitle.textContent = "⚠️ 복장 보완 필요";
         modalTitle.style.color = "#E53935";
         modalScore.style.borderColor = "#E53935";
         modalScore.style.color = "#E53935";
-        
-        if (!hasKnees || !hasFeet) {
-          modalDesc.innerHTML = "하반신(바지, 신발)이 잘려 보이지 않습니다.<br><strong>폰을 조금 더 멀리 두고 전신을 비춰주세요.</strong>";
-        } else {
-          modalDesc.innerHTML = "미확인 항목을 챙겨 입으신 후<br><strong>다시 촬영해 주세요.</strong>";
-        }
+        modalDesc.innerHTML = "미착용(또는 맨살 노출) 항목을 챙겨 입으신 후<br><strong>다시 촬영해 주세요.</strong>";
       }
 
       modal.style.display = 'flex';
     }
 
-    // 5. 달력 렌더링
     function renderCalendar() {
       document.getElementById('cal-month-title').textContent = `${curYear}년 ${curMonth + 1}월`;
       calDaysContainer.innerHTML = '';
