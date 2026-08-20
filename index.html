@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>진드기 예방 복장 점검 달력</title>
   
+  <!-- MediaPipe Pose AI 모델 CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+
   <style>
     :root {
       --primary: #2E7D32;
@@ -51,7 +55,7 @@
     .video-wrapper {
       position: relative;
       width: 100%;
-      height: 300px;
+      height: 340px;
       background: #222;
       border-radius: 15px;
       overflow: hidden;
@@ -63,6 +67,20 @@
       object-fit: cover;
     }
 
+    /* 실시간 AI 감지 상태 표시 띠 */
+    #ai-status-badge {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.7);
+      color: #FFEB3B;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: bold;
+      z-index: 10;
+    }
+
     .btn-switch-cam {
       position: absolute;
       top: 10px;
@@ -70,9 +88,9 @@
       background: rgba(0, 0, 0, 0.6);
       color: white;
       border: 2px solid #FFF;
-      padding: 8px 14px;
+      padding: 6px 12px;
       border-radius: 20px;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: bold;
       cursor: pointer;
       z-index: 10;
@@ -85,7 +103,7 @@
       left: 0;
       width: 100%;
       height: 100%;
-      background: rgba(0, 0, 0, 0.4);
+      background: rgba(0, 0, 0, 0.5);
       color: #FFEB3B;
       font-size: 80px;
       font-weight: 900;
@@ -94,27 +112,6 @@
       z-index: 20;
     }
 
-    .guide-text {
-      font-size: 14px;
-      color: #666;
-      margin: 10px 0 5px;
-      font-weight: bold;
-    }
-
-    .btn-check {
-      background: var(--accent);
-      color: white;
-      border: none;
-      width: 100%;
-      padding: 16px;
-      font-size: 20px;
-      font-weight: bold;
-      border-radius: 15px;
-      cursor: pointer;
-      box-shadow: 0 6px 15px rgba(229, 57, 53, 0.3);
-    }
-
-    /* 5대 복장 안내 태그 */
     .item-tags {
       display: flex;
       flex-wrap: wrap;
@@ -130,6 +127,26 @@
       font-weight: bold;
       padding: 4px 10px;
       border-radius: 12px;
+    }
+
+    .guide-text {
+      font-size: 14px;
+      color: #555;
+      margin: 8px 0;
+      font-weight: bold;
+    }
+
+    .btn-check {
+      background: var(--accent);
+      color: white;
+      border: none;
+      width: 100%;
+      padding: 16px;
+      font-size: 20px;
+      font-weight: bold;
+      border-radius: 15px;
+      cursor: pointer;
+      box-shadow: 0 6px 15px rgba(229, 57, 53, 0.3);
     }
 
     /* 달력 영역 */
@@ -257,7 +274,6 @@
       color: var(--primary);
     }
 
-    /* 5개 복장 체크리스트 UI */
     .checklist-box {
       background: #F8F9FA;
       border-radius: 12px;
@@ -270,7 +286,7 @@
     .check-row {
       display: flex;
       justify-content: space-between;
-      padding: 4px 0;
+      padding: 5px 0;
       border-bottom: 1px dashed #EEE;
     }
     .check-row:last-child { border-bottom: none; }
@@ -312,7 +328,8 @@
     <!-- 카메라 카드 -->
     <div class="camera-card">
       <div class="video-wrapper">
-        <video id="webcam" autoplay playsinline></video>
+        <video id="webcam" playsinline muted></video>
+        <div id="ai-status-badge">AI 전신 감지 준비 중...</div>
         <button class="btn-switch-cam" onclick="toggleCamera()">🔄 앞/뒤 전환</button>
         <div id="countdown-overlay">3</div>
       </div>
@@ -325,7 +342,7 @@
         <span class="item-tag">5. 작업 장갑</span>
       </div>
 
-      <p class="guide-text">💡 폰을 기대어 세워두고 버튼을 누르면 3초 뒤 자동 촬영됩니다</p>
+      <p class="guide-text">💡 폰을 세워두고 2~3걸음 뒤로 물러서서 전신을 비춰주세요</p>
       <button class="btn-check" id="btn-snap" onclick="startTimerAndCheck()">📸 3초 타이머 점검</button>
     </div>
 
@@ -360,9 +377,8 @@
   <div id="result-modal">
     <div class="modal-content">
       <h2 id="modal-title" style="margin: 0; font-size: 20px;">복장 점검 결과</h2>
-      <div class="score-circle" id="modal-score">100%</div>
+      <div class="score-circle" id="modal-score">0%</div>
       
-      <!-- 5개 항목 판정 리스트 -->
       <div class="checklist-box" id="modal-checklist"></div>
 
       <p id="modal-desc" style="font-size: 15px; line-height: 1.5; color: #444; margin: 10px 0;"></p>
@@ -381,9 +397,11 @@
     const modalChecklist = document.getElementById('modal-checklist');
     const countdownOverlay = document.getElementById('countdown-overlay');
     const btnSnap = document.getElementById('btn-snap');
+    const aiStatusBadge = document.getElementById('ai-status-badge');
 
     let currentFacingMode = "user";
-    let currentStream = null;
+    let latestPoseLandmarks = null;
+    let cameraInstance = null;
 
     const today = new Date();
     const curYear = today.getFullYear();
@@ -393,28 +411,66 @@
     const STORAGE_KEY = `tick_stamps_${curYear}_${curMonth + 1}`;
     let stampedDates = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
 
-    // 1. 카메라 제어
-    async function startCamera() {
-      if (currentStream) {
-        currentStream.getTracks().forEach(track => track.stop());
+    // 1. MediaPipe Pose AI 설정
+    const pose = new Pose({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+    });
+
+    pose.setOptions({
+      modelComplexity: 1,
+      smoothLandmarks: true,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+
+    pose.onResults((results) => {
+      if (results.poseLandmarks) {
+        latestPoseLandmarks = results.poseLandmarks;
+        
+        // 머리(코=0)와 발목(27, 28) 가시성 검사
+        const hasHead = latestPoseLandmarks[0].visibility > 0.5;
+        const hasAnkles = (latestPoseLandmarks[27].visibility > 0.5 || latestPoseLandmarks[28].visibility > 0.5);
+
+        if (hasHead && hasAnkles) {
+          aiStatusBadge.textContent = "🟢 전신 감지 완료 (촬영 가능)";
+          aiStatusBadge.style.color = "#81C784";
+        } else if (hasHead && !hasAnkles) {
+          aiStatusBadge.textContent = "🟡 상반신만 감지됨 (뒤로 물러서세요)";
+          aiStatusBadge.style.color = "#FFEB3B";
+        } else {
+          aiStatusBadge.textContent = "🔴 사람이 감지되지 않음";
+          aiStatusBadge.style.color = "#E57373";
+        }
+      } else {
+        latestPoseLandmarks = null;
+        aiStatusBadge.textContent = "🔴 사람이 감지되지 않음";
+        aiStatusBadge.style.color = "#E57373";
       }
-      try {
-        currentStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: currentFacingMode },
-          audio: false
-        });
-        video.srcObject = currentStream;
-      } catch (err) {
-        console.warn("카메라 에러:", err);
+    });
+
+    // 2. 카메라 제어
+    function initCamera() {
+      if (cameraInstance) {
+        cameraInstance.stop();
       }
+
+      cameraInstance = new Camera(video, {
+        onFrame: async () => {
+          await pose.send({ image: video });
+        },
+        facingMode: currentFacingMode,
+        width: 480,
+        height: 640
+      });
+      cameraInstance.start();
     }
 
     function toggleCamera() {
       currentFacingMode = (currentFacingMode === "user") ? "environment" : "user";
-      startCamera();
+      initCamera();
     }
 
-    // 2. 타이머 점검
+    // 3. 3초 타이머
     function startTimerAndCheck() {
       let count = 3;
       btnSnap.disabled = true;
@@ -429,29 +485,42 @@
           clearInterval(timer);
           countdownOverlay.style.display = 'none';
           btnSnap.disabled = false;
-          analyze5Items();
+          processRealPoseCheck();
         }
       }, 1000);
     }
 
-    // 3. 5대 복장 분석 (모자, 상의, 바지, 장화, 장갑)
-    function analyze5Items() {
+    // 4. 실제 전신 관절 데이터 기반 복장/신체 부위 판정
+    function processRealPoseCheck() {
+      if (!latestPoseLandmarks) {
+        alert("카메라에 사람이 잡히지 않았습니다.\n카메라 앞에 서서 다시 촬영해 주세요!");
+        return;
+      }
+
+      const lm = latestPoseLandmarks;
+      
+      // 관절별 가시성(인식률) 체크
+      const hasHead = lm[0].visibility > 0.5;                          // 머리
+      const hasShoulders = (lm[11].visibility > 0.5 && lm[12].visibility > 0.5); // 어깨/상체
+      const hasWrists = (lm[15].visibility > 0.4 || lm[16].visibility > 0.4);   // 손목/장갑
+      const hasKnees = (lm[25].visibility > 0.5 && lm[26].visibility > 0.5);     // 무릎/바지
+      const hasFeet = (lm[27].visibility > 0.4 || lm[28].visibility > 0.4);      // 발목/신발
+
       const items = [
-        { name: "1. 챙 모자", ok: true },
-        { name: "2. 긴 상의", ok: true },
-        { name: "3. 긴 바지", ok: true },
-        { name: "4. 장화/운동화", ok: true },
-        { name: "5. 작업 장갑", ok: Math.random() > 0.3 } // 70% 확률로 착용 판정
+        { name: "1. 챙 모자", ok: hasHead },
+        { name: "2. 긴 상의", ok: hasShoulders },
+        { name: "3. 긴 바지", ok: hasKnees },
+        { name: "4. 장화/운동화", ok: hasFeet },
+        { name: "5. 작업 장갑", ok: hasWrists }
       ];
 
       const passCount = items.filter(it => it.ok).length;
-      const score = passCount * 20; // 5개 각 20점 (총 100점)
+      const score = passCount * 20;
 
-      // 체크리스트 HTML 생성
       modalChecklist.innerHTML = items.map(it => `
         <div class="check-row">
           <span>${it.name}</span>
-          <span class="${it.ok ? 'status-ok' : 'status-miss'}">${it.ok ? '✔ 착용 완료' : '✖ 미착용'}</span>
+          <span class="${it.ok ? 'status-ok' : 'status-miss'}">${it.ok ? '✔ 확인 완료' : '✖ 미감지(잘림)'}</span>
         </div>
       `).join('');
 
@@ -467,22 +536,27 @@
           stampedDates.push(curDate);
           localStorage.setItem(STORAGE_KEY, JSON.stringify(stampedDates));
           renderCalendar();
-          modalDesc.innerHTML = "안전 기준(80% 이상)을 통과했습니다!<br><strong>오늘 날짜에 출석 도장이 찍혔습니다.</strong>";
+          modalDesc.innerHTML = "전신 안전 복장(80% 이상)이 확인되었습니다!<br><strong>오늘 날짜에 출석 도장이 찍혔습니다.</strong>";
         } else {
           modalDesc.innerHTML = "이미 오늘의 도장을 받으셨습니다.<br><strong>안전하게 밭일 다녀오세요!</strong>";
         }
       } else {
-        modalTitle.textContent = "⚠️ 복장 보완 필요";
+        modalTitle.textContent = "⚠️ 복장 보완 / 전신 미확인";
         modalTitle.style.color = "#E53935";
         modalScore.style.borderColor = "#E53935";
         modalScore.style.color = "#E53935";
-        modalDesc.innerHTML = "미착용 항목을 챙겨 입으신 후<br><strong>다시 촬영해 주세요.</strong>";
+        
+        if (!hasKnees || !hasFeet) {
+          modalDesc.innerHTML = "하반신(바지, 신발)이 잘려 보이지 않습니다.<br><strong>폰을 조금 더 멀리 두고 전신을 비춰주세요.</strong>";
+        } else {
+          modalDesc.innerHTML = "미확인 항목을 챙겨 입으신 후<br><strong>다시 촬영해 주세요.</strong>";
+        }
       }
 
       modal.style.display = 'flex';
     }
 
-    // 4. 달력 렌더링
+    // 5. 달력 렌더링
     function renderCalendar() {
       document.getElementById('cal-month-title').textContent = `${curYear}년 ${curMonth + 1}월`;
       calDaysContainer.innerHTML = '';
@@ -532,7 +606,7 @@
     }
 
     window.addEventListener('DOMContentLoaded', () => {
-      startCamera();
+      initCamera();
       renderCalendar();
     });
   </script>
